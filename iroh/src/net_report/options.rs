@@ -2,7 +2,7 @@
 
 pub use imp::Options;
 
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 mod imp {
     use std::{collections::BTreeSet, sync::Arc};
 
@@ -145,7 +145,7 @@ mod imp {
     }
 }
 
-#[cfg(wasm_browser)]
+#[cfg(any(wasm_browser, feature = "no_holepunch"))]
 mod imp {
     use std::collections::BTreeSet;
 

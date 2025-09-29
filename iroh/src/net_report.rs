@@ -244,17 +244,17 @@ impl Client {
     /// This starts a connected actor in the background.  Once the client is dropped it will
     /// stop running.
     pub fn new(
-        #[cfg(not(wasm_browser))] port_mapper: Option<portmapper::Client>,
-        #[cfg(not(wasm_browser))] dns_resolver: DnsResolver,
-        #[cfg(not(wasm_browser))] ip_mapped_addrs: Option<IpMappedAddresses>,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] port_mapper: Option<portmapper::Client>,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] dns_resolver: DnsResolver,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] ip_mapped_addrs: Option<IpMappedAddresses>,
         metrics: Arc<Metrics>,
     ) -> Result<Self> {
         let mut actor = Actor::new(
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             port_mapper,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             dns_resolver,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             ip_mapped_addrs,
             metrics,
         )?;
@@ -462,7 +462,7 @@ struct Actor {
     ///
     /// The port mapper is responsible for talking to routers via UPnP and the like to try
     /// and open ports.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     port_mapper: Option<portmapper::Client>,
 
     // Actor state.
@@ -474,11 +474,11 @@ struct Actor {
     current_report_run: Option<ReportRun>,
 
     /// The DNS resolver to use for probes that need to perform DNS lookups
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     dns_resolver: DnsResolver,
 
     /// The [`IpMappedAddresses`] that allows you to do QAD in iroh
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     ip_mapped_addrs: Option<IpMappedAddresses>,
     metrics: Arc<Metrics>,
 }
@@ -489,9 +489,9 @@ impl Actor {
     /// This does not start the actor, see [`Actor::run`] for this.  You should not
     /// normally create this directly but rather create a [`Client`].
     fn new(
-        #[cfg(not(wasm_browser))] port_mapper: Option<portmapper::Client>,
-        #[cfg(not(wasm_browser))] dns_resolver: DnsResolver,
-        #[cfg(not(wasm_browser))] ip_mapped_addrs: Option<IpMappedAddresses>,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] port_mapper: Option<portmapper::Client>,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] dns_resolver: DnsResolver,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] ip_mapped_addrs: Option<IpMappedAddresses>,
         metrics: Arc<Metrics>,
     ) -> Result<Self> {
         // TODO: consider an instrumented flume channel so we have metrics.
@@ -500,13 +500,13 @@ impl Actor {
             receiver,
             sender,
             reports: Default::default(),
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             port_mapper,
             in_flight_stun_requests: Default::default(),
             current_report_run: None,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             dns_resolver,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             ip_mapped_addrs,
             metrics,
         })
@@ -564,7 +564,7 @@ impl Actor {
         response_tx: oneshot::Sender<Result<Arc<Report>>>,
     ) {
         let protocols = opts.to_protocols();
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let socket_state = SocketState {
             port_mapper: self.port_mapper.clone(),
             stun_sock4: opts.stun_sock_v4,
@@ -610,7 +610,7 @@ impl Actor {
             relay_map,
             protocols,
             self.metrics.clone(),
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             socket_state,
         );
 

@@ -35,7 +35,7 @@ use iroh_relay::{
     protos::stun,
     RelayMap, RelayNode,
 };
-#[cfg(wasm_browser)]
+#[cfg(any(wasm_browser, feature = "no_holepunch"))]
 use n0_future::future::Pending;
 use n0_future::{
     task::{self, AbortOnDropHandle, JoinSet},
@@ -113,7 +113,7 @@ impl Client {
         relay_map: RelayMap,
         protocols: BTreeSet<ProbeProto>,
         metrics: Arc<Metrics>,
-        #[cfg(not(wasm_browser))] socket_state: SocketState,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] socket_state: SocketState,
     ) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel(32);
         let addr = Addr {
@@ -128,9 +128,9 @@ impl Client {
             report: Report::default(),
             outstanding_tasks: OutstandingTasks::default(),
             protocols,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             socket_state,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             hairpin_actor: hairpin::Client::new(net_report, addr),
             metrics,
         };
@@ -208,10 +208,10 @@ struct Actor {
     protocols: BTreeSet<ProbeProto>,
 
     /// Any socket-related state that doesn't exist/work in browsers
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     socket_state: SocketState,
     /// The hairpin actor.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     hairpin_actor: hairpin::Client,
     metrics: Arc<Metrics>,
 }
@@ -248,9 +248,9 @@ impl Actor {
     ///   - Updates the report, cancels unneeded futures.
     /// - Sends the report to the net_report actor.
     async fn run_inner(&mut self) -> Result<()> {
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let port_mapper = self.socket_state.port_mapper.is_some();
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         let port_mapper = false;
         debug!(%port_mapper, "reportstate actor starting");
 
@@ -376,7 +376,7 @@ impl Actor {
         update_report(&mut self.report, probe_report);
 
         // When we discover the first IPv4 address we want to start the hairpin actor.
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         if let Some(ref addr) = self.report.global_v4 {
             if !self.hairpin_actor.has_started() {
                 self.hairpin_actor.start_check(*addr);
@@ -467,14 +467,14 @@ impl Actor {
         &mut self,
     ) -> MaybeFuture<Pin<Box<impl Future<Output = Option<portmapper::ProbeOutput>>>>> {
         // In the browser, the compiler struggles to infer the type of future inside, because it's never set.
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         let port_mapping: MaybeFuture<Pin<Box<Pending<Option<portmapper::ProbeOutput>>>>> =
             MaybeFuture::default();
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let mut port_mapping = MaybeFuture::default();
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         if let Some(port_mapper) = self.socket_state.port_mapper.clone() {
             port_mapping.inner = Some(Box::pin(async move {
                 match port_mapper.probe().await {
@@ -499,16 +499,16 @@ impl Actor {
         &mut self,
     ) -> MaybeFuture<Pin<Box<impl Future<Output = Option<bool>>>>> {
         // In the browser case the compiler cannot infer the type of the future, because it's never set:
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         let captive_task: MaybeFuture<Pin<Box<Pending<Option<bool>>>>> = MaybeFuture::default();
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let mut captive_task = MaybeFuture::default();
 
         // If we're doing a full probe, also check for a captive portal. We
         // delay by a bit to wait for UDP STUN to finish, to avoid the probe if
         // it's unnecessary.
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         if self.last_report.is_none() {
             // Even if we're doing a non-incremental update, we may want to try our
             // preferred relay for captive portal detection.
@@ -572,22 +572,22 @@ impl Actor {
     ///   - Once there are [`ProbeReport`]s from enough nodes, all remaining probes are
     ///     aborted.  That is, the main actor loop stops polling them.
     async fn spawn_probes_task(&mut self) -> Result<JoinSet<Result<ProbeReport>>> {
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let if_state = interfaces::State::new().await;
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         debug!(%if_state, "Local interfaces");
         let plan = match self.last_report {
             Some(ref report) => ProbePlan::with_last_report(
                 &self.relay_map,
                 report,
                 &self.protocols,
-                #[cfg(not(wasm_browser))]
+                #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                 &if_state,
             ),
             None => ProbePlan::initial(
                 &self.relay_map,
                 &self.protocols,
-                #[cfg(not(wasm_browser))]
+                #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                 &if_state,
             ),
         };
@@ -596,7 +596,7 @@ impl Actor {
         // The pinger is created here so that any sockets that might be bound for it are
         // shared between the probes that use it.  It binds sockets lazily, so we can always
         // create it.
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let pinger = Pinger::new();
 
         // A collection of futures running probe sets.
@@ -609,9 +609,9 @@ impl Actor {
                 let probe = probe.clone();
                 let net_report = self.net_report.clone();
 
-                #[cfg(not(wasm_browser))]
+                #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                 let pinger = pinger.clone();
-                #[cfg(not(wasm_browser))]
+                #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                 let socket_state = self.socket_state.clone();
 
                 let metrics = self.metrics.clone();
@@ -622,9 +622,9 @@ impl Actor {
                         probe.clone(),
                         net_report,
                         metrics,
-                        #[cfg(not(wasm_browser))]
+                        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                         pinger,
-                        #[cfg(not(wasm_browser))]
+                        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                         socket_state,
                     )
                     .instrument(debug_span!("run_probe", %probe)),
@@ -756,8 +756,8 @@ async fn run_probe(
     probe: Probe,
     net_report: net_report::Addr,
     metrics: Arc<Metrics>,
-    #[cfg(not(wasm_browser))] pinger: Pinger,
-    #[cfg(not(wasm_browser))] socket_state: SocketState,
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] pinger: Pinger,
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] socket_state: SocketState,
 ) -> Result<ProbeReport, ProbeError> {
     if !probe.delay().is_zero() {
         trace!("delaying probe");
@@ -791,7 +791,7 @@ async fn run_probe(
         ));
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     let relay_addr = get_relay_addr(&socket_state.dns_resolver, &relay_node, probe.proto())
         .await
         .context("no relay node addr")
@@ -799,7 +799,7 @@ async fn run_probe(
 
     let mut result = ProbeReport::new(probe.clone());
     match probe {
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         Probe::StunIpv4 { .. } | Probe::StunIpv6 { .. } => {
             let maybe_sock = if matches!(probe, Probe::StunIpv4 { .. }) {
                 socket_state.stun_sock4.as_ref()
@@ -818,14 +818,14 @@ async fn run_probe(
                 }
             }
         }
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         Probe::IcmpV4 { .. } | Probe::IcmpV6 { .. } => {
             result = run_icmp_probe(probe, relay_addr, pinger).await?
         }
         Probe::Https { ref node, .. } => {
             debug!("sending probe HTTPS");
             match measure_https_latency(
-                #[cfg(not(wasm_browser))]
+                #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                 &socket_state.dns_resolver,
                 node,
                 None,
@@ -851,7 +851,7 @@ async fn run_probe(
             }
         }
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         Probe::QuicIpv4 { ref node, .. } | Probe::QuicIpv6 { ref node, .. } => {
             debug!("sending QUIC address discovery probe");
             let url = node.url.clone();
@@ -881,7 +881,7 @@ async fn run_probe(
 }
 
 /// Run a STUN IPv4 or IPv6 probe.
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 async fn run_stun_probe(
     sock: &Arc<UdpSocket>,
     relay_addr: SocketAddr,
@@ -963,7 +963,7 @@ async fn run_stun_probe(
     }
 }
 
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 fn maybe_to_mapped_addr(
     ip_mapped_addrs: Option<IpMappedAddresses>,
     addr: SocketAddr,
@@ -975,7 +975,7 @@ fn maybe_to_mapped_addr(
 }
 
 /// Run a QUIC address discovery probe.
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 async fn run_quic_probe(
     quic_config: QuicConfig,
     url: RelayUrl,
@@ -1020,7 +1020,7 @@ async fn run_quic_probe(
 /// return a "204 No Content" response and checking if that's what we get.
 ///
 /// The boolean return is whether we think we have a captive portal.
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 async fn check_captive_portal(
     dns_resolver: &DnsResolver,
     dm: &RelayMap,
@@ -1105,7 +1105,7 @@ async fn check_captive_portal(
 /// Returns the proper port based on the protocol of the probe.
 fn get_port(relay_node: &RelayNode, proto: &ProbeProto) -> Result<u16> {
     match proto {
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         ProbeProto::QuicIpv4 | ProbeProto::QuicIpv6 => {
             if let Some(ref quic) = relay_node.quic {
                 if quic.port == 0 {
@@ -1137,7 +1137,7 @@ fn get_port(relay_node: &RelayNode, proto: &ProbeProto) -> Result<u16> {
 /// assume that we are running this net report with `iroh`, and need to provide mapped
 /// addresses to the probe in order for it to function in the specialize iroh-quinn
 /// endpoint that expects mapped addresses.
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 async fn get_relay_addr(
     dns_resolver: &DnsResolver,
     relay_node: &RelayNode,
@@ -1164,7 +1164,7 @@ async fn get_relay_addr(
 /// Do a staggared ipv4 DNS lookup based on [`RelayNode`]
 ///
 /// `port` is combined with the resolved [`std::net::Ipv4Addr`] to return a [`SocketAddr`]
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 async fn relay_lookup_ipv4_staggered(
     dns_resolver: &DnsResolver,
     relay: &RelayNode,
@@ -1194,7 +1194,7 @@ async fn relay_lookup_ipv4_staggered(
 /// Do a staggared ipv6 DNS lookup based on [`RelayNode`]
 ///
 /// `port` is combined with the resolved [`std::net::Ipv6Addr`] to return a [`SocketAddr`]
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 async fn relay_lookup_ipv6_staggered(
     dns_resolver: &DnsResolver,
     relay: &RelayNode,
@@ -1225,7 +1225,7 @@ async fn relay_lookup_ipv6_staggered(
 ///
 /// The `pinger` is passed in so the ping sockets are only bound once
 /// for the probe set.
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 async fn run_icmp_probe(
     probe: Probe,
     relay_addr: SocketAddr,
@@ -1271,7 +1271,7 @@ async fn run_icmp_probe(
 /// use of self-signed certificates for servers.  Currently this is used for testing.
 #[allow(clippy::unused_async)]
 async fn measure_https_latency(
-    #[cfg(not(wasm_browser))] dns_resolver: &DnsResolver,
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] dns_resolver: &DnsResolver,
     node: &RelayNode,
     certs: Option<Vec<rustls::pki_types::CertificateDer<'static>>>,
 ) -> Result<(Duration, IpAddr)> {
@@ -1282,12 +1282,12 @@ async fn measure_https_latency(
     // https://github.com/n0-computer/iroh/issues/2901
     let mut builder = reqwest::ClientBuilder::new();
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     {
         builder = builder.redirect(reqwest::redirect::Policy::none());
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     if let Some(Host::Domain(domain)) = url.host() {
         // Use our own resolver rather than getaddrinfo
         //
@@ -1304,7 +1304,7 @@ async fn measure_https_latency(
         builder = builder.resolve_to_addrs(domain, &addrs);
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     if let Some(certs) = certs {
         for cert in certs {
             let cert = reqwest::Certificate::from_der(&cert)?;
@@ -1355,7 +1355,7 @@ fn update_report(report: &mut Report, probe_report: ProbeReport) {
             .relay_latency
             .update_relay(relay_node.url.clone(), latency);
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         if matches!(
             probe_report.probe.proto(),
             ProbeProto::StunIpv4

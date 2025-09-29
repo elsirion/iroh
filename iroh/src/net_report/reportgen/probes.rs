@@ -56,23 +56,23 @@ pub enum ProbeProto {
     /// HTTPS
     Https,
     /// ICMP IPv4
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     IcmpV4,
     /// ICMP IPv6
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     IcmpV6,
     /// QUIC Address Discovery Ipv4
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     QuicIpv4,
     /// QUIC Address Discovery Ipv6
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     QuicIpv6,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, derive_more::Display)]
 pub(super) enum Probe {
     #[display("STUN Ipv4 after {delay:?} to {node}")]
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     StunIpv4 {
         /// When the probe is started, relative to the time that `get_report` is called.
         /// One probe in each `ProbePlan` should have a delay of 0. Non-zero values
@@ -83,7 +83,7 @@ pub(super) enum Probe {
         node: Arc<RelayNode>,
     },
     #[display("STUN Ipv6 after {delay:?} to {node}")]
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     StunIpv6 {
         delay: Duration,
         node: Arc<RelayNode>,
@@ -94,25 +94,25 @@ pub(super) enum Probe {
         node: Arc<RelayNode>,
     },
     #[display("ICMPv4 after {delay:?} to {node}")]
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     IcmpV4 {
         delay: Duration,
         node: Arc<RelayNode>,
     },
     #[display("ICMPv6 after {delay:?} to {node}")]
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     IcmpV6 {
         delay: Duration,
         node: Arc<RelayNode>,
     },
     #[display("QAD Ipv4 after {delay:?} to {node}")]
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     QuicIpv4 {
         delay: Duration,
         node: Arc<RelayNode>,
     },
     #[display("QAD Ipv6 after {delay:?} to {node}")]
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     QuicIpv6 {
         delay: Duration,
         node: Arc<RelayNode>,
@@ -122,7 +122,7 @@ pub(super) enum Probe {
 impl Probe {
     pub(super) fn delay(&self) -> Duration {
         match self {
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Probe::StunIpv4 { delay, .. }
             | Probe::StunIpv6 { delay, .. }
             | Probe::Https { delay, .. }
@@ -130,32 +130,32 @@ impl Probe {
             | Probe::IcmpV6 { delay, .. }
             | Probe::QuicIpv4 { delay, .. }
             | Probe::QuicIpv6 { delay, .. } => *delay,
-            #[cfg(wasm_browser)]
+            #[cfg(any(wasm_browser, feature = "no_holepunch"))]
             Probe::Https { delay, .. } => *delay,
         }
     }
 
     pub(super) fn proto(&self) -> ProbeProto {
         match self {
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Probe::StunIpv4 { .. } => ProbeProto::StunIpv4,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Probe::StunIpv6 { .. } => ProbeProto::StunIpv6,
             Probe::Https { .. } => ProbeProto::Https,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Probe::IcmpV4 { .. } => ProbeProto::IcmpV4,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Probe::IcmpV6 { .. } => ProbeProto::IcmpV6,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Probe::QuicIpv4 { .. } => ProbeProto::QuicIpv4,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Probe::QuicIpv6 { .. } => ProbeProto::QuicIpv6,
         }
     }
 
     pub(super) fn node(&self) -> &Arc<RelayNode> {
         match self {
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Probe::StunIpv4 { node, .. }
             | Probe::StunIpv6 { node, .. }
             | Probe::Https { node, .. }
@@ -163,7 +163,7 @@ impl Probe {
             | Probe::IcmpV6 { node, .. }
             | Probe::QuicIpv4 { node, .. }
             | Probe::QuicIpv6 { node, .. } => node,
-            #[cfg(wasm_browser)]
+            #[cfg(any(wasm_browser, feature = "no_holepunch"))]
             Probe::Https { node, .. } => node,
         }
     }
@@ -246,7 +246,7 @@ pub(super) struct ProbePlan {
 
 impl ProbePlan {
     /// Creates an initial probe plan.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     pub(super) fn initial(
         relay_map: &RelayMap,
         protocols: &BTreeSet<ProbeProto>,
@@ -352,7 +352,7 @@ impl ProbePlan {
     /// Creates an initial probe plan for browsers.
     ///
     /// Here, we essentially only run HTTPS probes without any delays waiting for STUN.
-    #[cfg(wasm_browser)]
+    #[cfg(any(wasm_browser, feature = "no_holepunch"))]
     pub(super) fn initial(relay_map: &RelayMap, protocols: &BTreeSet<ProbeProto>) -> Self {
         let mut plan = Self {
             set: BTreeSet::new(),
@@ -380,7 +380,7 @@ impl ProbePlan {
     /// Creates a follow up probe plan using a previous net_report report in browsers.
     ///
     /// This will only schedule HTTPS probes.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     pub(super) fn with_last_report(
         relay_map: &RelayMap,
         last_report: &Report,
@@ -522,7 +522,7 @@ impl ProbePlan {
         plan
     }
 
-    #[cfg(wasm_browser)]
+    #[cfg(any(wasm_browser, feature = "no_holepunch"))]
     pub(super) fn with_last_report(
         relay_map: &RelayMap,
         last_report: &Report,
@@ -601,7 +601,7 @@ impl ProbePlan {
 
     /// Stun & Quic probes are "priority" probes
     fn has_priority_probes(&self) -> bool {
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         for probe in &self.set {
             if matches!(
                 probe.proto,

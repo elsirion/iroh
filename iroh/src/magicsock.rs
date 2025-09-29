@@ -43,7 +43,9 @@ use n0_future::{
 };
 use netwatch::{interfaces, netmon};
 #[cfg(not(wasm_browser))]
-use netwatch::{ip::LocalAddresses, UdpSocket};
+use netwatch::UdpSocket;
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
+use netwatch::ip::LocalAddresses;
 use quinn::{AsyncUdpSocket, ServerConfig};
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use relay_actor::RelaySendItem;
@@ -52,7 +54,7 @@ use tokio::sync::{self, mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::{
     debug, error, error_span, event, info, info_span, instrument, trace, trace_span, warn,
-    Instrument, Level, Span,
+    Instrument, Level,
 };
 use url::Url;
 
@@ -68,7 +70,9 @@ use crate::dns::DnsResolver;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::endpoint::PathSelection;
 #[cfg(not(wasm_browser))]
-use crate::net_report::{IpMappedAddr, QuicConfig};
+use crate::net_report::IpMappedAddr;
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
+use crate::net_report::QuicConfig;
 use crate::{
     defaults::timeouts::NET_REPORT_TIMEOUT,
     disco::{self, CallMeMaybe, SendAddr},
@@ -209,7 +213,7 @@ pub(crate) struct MagicSock {
     secret_encryption_key: crypto_box::SecretKey,
 
     /// Sockets & related state
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     sockets: SocketState,
 
     /// Close is in progress (or done)
@@ -318,7 +322,7 @@ impl MagicSock {
     }
 
     /// Get the cached version of the Ipv4 and Ipv6 addrs of the current connection.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     pub(crate) fn local_addr(&self) -> (SocketAddr, Option<SocketAddr>) {
         *self.sockets.local_addrs.read().expect("not poisoned")
     }
@@ -476,7 +480,7 @@ impl MagicSock {
             .ok();
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     #[cfg_attr(windows, allow(dead_code))]
     fn normalized_local_addr(&self) -> io::Result<SocketAddr> {
         let (v4, v6) = self.local_addr();
@@ -548,7 +552,7 @@ impl MagicSock {
                         let mut relay_error = None;
 
                         // send udp
-                        #[cfg(not(wasm_browser))]
+                        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                         if let Some(addr) = udp_addr {
                             // rewrite target address
                             transmit.destination = addr;
@@ -644,7 +648,7 @@ impl MagicSock {
                     }
                 }
             }
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             MappedAddr::Ip(dest) => {
                 trace!(
                     dst = %dest,
@@ -742,7 +746,7 @@ impl MagicSock {
         }
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn try_send_udp(&self, addr: SocketAddr, transmit: &quinn_udp::Transmit) -> io::Result<()> {
         let conn = self.conn_for_addr(addr)?;
         conn.try_send(transmit)?;
@@ -755,7 +759,7 @@ impl MagicSock {
         Ok(())
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn conn_for_addr(&self, addr: SocketAddr) -> io::Result<&UdpConn> {
         let sock = match addr {
             SocketAddr::V4(_) => &self.sockets.v4,
@@ -770,7 +774,7 @@ impl MagicSock {
 
     /// NOTE: Receiving on a [`Self::closed`] socket will return [`Poll::Pending`] indefinitely.
     #[instrument(skip_all)]
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn poll_recv(
         &self,
         cx: &mut Context,
@@ -844,8 +848,9 @@ impl MagicSock {
         }
     }
 
+
     /// poll_recv in browsers is "just" polling the relay receive path
-    #[cfg(wasm_browser)]
+    #[cfg(any(wasm_browser, feature = "no_holepunch"))]
     fn poll_recv(
         &self,
         cx: &mut Context,
@@ -861,7 +866,7 @@ impl MagicSock {
     ///
     /// This fixes up the datagrams to use the correct [`NodeIdMappedAddr`] and extracts DISCO
     /// packets, processing them inside the magic socket.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn process_udp_datagrams(
         &self,
         from_ipv4: bool,
@@ -1091,11 +1096,11 @@ impl MagicSock {
         let quic_mapped_addr = self.node_map.receive_relay(&dm.url, dm.src);
 
         // Normalize local_ip
-        #[cfg(not(any(windows, wasm_browser)))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let dst_ip = self.normalized_local_addr().ok().map(|addr| addr.ip());
         // Reasoning for this here:
         // https://github.com/n0-computer/iroh/pull/2595#issuecomment-2290947319
-        #[cfg(any(windows, wasm_browser))]
+        #[cfg(any(windows, wasm_browser, feature = "no_holepunch"))]
         let dst_ip = None;
 
         let meta = quinn_udp::RecvMeta {
@@ -1367,13 +1372,13 @@ impl MagicSock {
         msg: disco::Message,
     ) -> io::Result<()> {
         match dst {
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             SendAddr::Udp(addr) => {
                 self.try_send_disco_message_udp(addr, dst_key, &msg)?;
             }
-            #[cfg(wasm_browser)]
+            #[cfg(any(wasm_browser, feature = "no_holepunch"))]
             SendAddr::Udp(addr) => {
-                warn!(?addr, "Asked to send on UDP in browser code");
+                warn!(?addr, "Asked to send on UDP in browser code or no_holepunch feature is enabled");
             }
             SendAddr::Relay(ref url) => {
                 if !self.send_disco_message_relay(url, dst_key, msg) {
@@ -1407,7 +1412,7 @@ impl MagicSock {
         }
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     async fn send_disco_message_udp(
         &self,
         dst: SocketAddr,
@@ -1434,7 +1439,7 @@ impl MagicSock {
         .await
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn try_send_disco_message_udp(
         &self,
         dst: SocketAddr,
@@ -1581,7 +1586,7 @@ impl MagicSock {
 #[derive(Clone, Debug)]
 enum MappedAddr {
     NodeId(NodeIdMappedAddr),
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     Ip(IpMappedAddr),
     None(SocketAddr),
 }
@@ -1594,7 +1599,7 @@ impl From<SocketAddr> for MappedAddr {
                 if let Ok(node_id_mapped_addr) = NodeIdMappedAddr::try_from(addr) {
                     return MappedAddr::NodeId(node_id_mapped_addr);
                 }
-                #[cfg(not(wasm_browser))]
+                #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                 if let Ok(ip_mapped_addr) = IpMappedAddr::try_from(addr) {
                     return MappedAddr::Ip(ip_mapped_addr);
                 }
@@ -1728,20 +1733,20 @@ impl Handle {
             metrics,
         } = opts;
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let actor_sockets = ActorSocketState::bind(addr_v4, addr_v6, metrics.portmapper.clone())?;
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let sockets = actor_sockets.msock_socket_state()?;
 
         let ip_mapped_addrs = IpMappedAddresses::default();
 
         let net_reporter = net_report::Client::new(
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Some(actor_sockets.port_mapper.clone()),
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             dns_resolver.clone(),
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             Some(ip_mapped_addrs.clone()),
             metrics.net_report.clone(),
         )?;
@@ -1766,7 +1771,7 @@ impl Handle {
             secret_key,
             secret_encryption_key,
             proxy_url,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             sockets,
             closing: AtomicBool::new(false),
             closed: AtomicBool::new(false),
@@ -1827,7 +1832,7 @@ impl Handle {
             .instrument(info_span!("relay-actor")),
         );
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let _ = actor_tasks.spawn({
             let msock = msock.clone();
             async move {
@@ -1853,20 +1858,20 @@ impl Handle {
         .with_root_certificates(root_store)
         .with_no_client_auth();
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let quic_config = Some(QuicConfig {
             ep: qad_endpoint,
             client_config,
             ipv4: true,
             ipv6: actor_sockets.v6.is_some(),
         });
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let net_report_config = net_report::Options::default()
             .stun_v4(Some(actor_sockets.v4.clone()))
             .stun_v6(actor_sockets.v6.clone())
             .quic_config(quic_config);
-        #[cfg(wasm_browser)]
-        let net_report_config = net_report::Options::default();
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
+        let net_report_config = net_report::Options::disabled();
 
         actor_tasks.spawn({
             let msock = msock.clone();
@@ -1879,7 +1884,7 @@ impl Handle {
                     msock,
                     periodic_re_stun_timer: new_re_stun_timer(false),
                     net_info_last: None,
-                    #[cfg(not(wasm_browser))]
+                    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                     sockets: actor_sockets,
                     no_v4_send: false,
                     net_reporter,
@@ -2188,15 +2193,15 @@ impl AsyncUdpSocket for MagicSock {
         // Right now however we have one single poller behaving the same for each
         // connection.  It checks all paths and returns Poll::Ready as soon as any path is
         // ready.
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let ipv4_poller = self.sockets.v4.create_io_poller();
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let ipv6_poller = self.sockets.v6.as_ref().map(|sock| sock.create_io_poller());
         let relay_sender = self.relay_datagram_send_channel.clone();
         Box::pin(IoPoller {
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             ipv4_poller,
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             ipv6_poller,
             relay_sender,
         })
@@ -2217,7 +2222,7 @@ impl AsyncUdpSocket for MagicSock {
     }
 
     fn local_addr(&self) -> io::Result<SocketAddr> {
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         match &*self.sockets.local_addrs.read().expect("not poisoned") {
             (ipv4, None) => {
                 // Pretend to be IPv6, because our `MappedAddr`s
@@ -2231,11 +2236,11 @@ impl AsyncUdpSocket for MagicSock {
             (_, Some(ipv6)) => Ok(*ipv6),
         }
         // Again, we need to pretend we're IPv6, because of our `MappedAddr`s.
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         return Ok(SocketAddr::new(std::net::Ipv6Addr::LOCALHOST.into(), 0));
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn max_transmit_segments(&self) -> usize {
         if let Some(socket) = self.sockets.v6.as_ref() {
             std::cmp::min(
@@ -2247,12 +2252,12 @@ impl AsyncUdpSocket for MagicSock {
         }
     }
 
-    #[cfg(wasm_browser)]
+    #[cfg(any(wasm_browser, feature = "no_holepunch"))]
     fn max_transmit_segments(&self) -> usize {
         1
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn max_receive_segments(&self) -> usize {
         if let Some(socket) = self.sockets.v6.as_ref() {
             // `max_receive_segments` controls the size of the `RecvMeta` buffer
@@ -2270,12 +2275,12 @@ impl AsyncUdpSocket for MagicSock {
         }
     }
 
-    #[cfg(wasm_browser)]
+    #[cfg(any(wasm_browser, feature = "no_holepunch"))]
     fn max_receive_segments(&self) -> usize {
         1
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn may_fragment(&self) -> bool {
         if let Some(socket) = self.sockets.v6.as_ref() {
             socket.may_fragment() || self.sockets.v4.may_fragment()
@@ -2284,7 +2289,7 @@ impl AsyncUdpSocket for MagicSock {
         }
     }
 
-    #[cfg(wasm_browser)]
+    #[cfg(any(wasm_browser, feature = "no_holepunch"))]
     fn may_fragment(&self) -> bool {
         false
     }
@@ -2292,9 +2297,9 @@ impl AsyncUdpSocket for MagicSock {
 
 #[derive(Debug)]
 struct IoPoller {
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     ipv4_poller: Pin<Box<dyn quinn::UdpPoller>>,
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     ipv6_poller: Option<Pin<Box<dyn quinn::UdpPoller>>>,
     relay_sender: RelayDatagramSendChannelSender,
 }
@@ -2303,12 +2308,12 @@ impl quinn::UdpPoller for IoPoller {
     fn poll_writable(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         // This version returns Ready as soon as any of them are ready.
         let this = &mut *self;
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         match this.ipv4_poller.as_mut().poll_writable(cx) {
             Poll::Ready(_) => return Poll::Ready(Ok(())),
             Poll::Pending => (),
         }
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         if let Some(ref mut ipv6_poller) = this.ipv6_poller {
             match ipv6_poller.as_mut().poll_writable(cx) {
                 Poll::Ready(_) => return Poll::Ready(Ok(())),
@@ -2341,7 +2346,7 @@ struct Actor {
     net_info_last: Option<NetInfo>,
 
     /// Socket state, grouped so we can cfg it out as one for browsers
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     sockets: ActorSocketState,
 
     /// Configuration for net report
@@ -2458,14 +2463,14 @@ impl Actor {
             .await?;
 
         // Let the the heartbeat only start a couple seconds later
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let mut direct_addr_heartbeat_timer = time::interval_at(
             time::Instant::now() + HEARTBEAT_INTERVAL,
             HEARTBEAT_INTERVAL,
         );
         let mut direct_addr_update_receiver =
             self.msock.direct_addr_update_state.running.subscribe();
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let mut portmap_watcher = self.sockets.port_mapper.watch_external_address();
 
         let mut discovery_events: BoxStream<DiscoveryItem> = Box::pin(n0_future::stream::empty());
@@ -2481,14 +2486,14 @@ impl Actor {
         let mut link_change_closed = false;
         loop {
             self.msock.metrics.magicsock.actor_tick_main.inc();
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             let portmap_watcher_changed = portmap_watcher.changed();
-            #[cfg(wasm_browser)]
-            let portmap_watcher_changed = n0_future::future::pending();
+            #[cfg(any(wasm_browser, feature = "no_holepunch"))]
+            let portmap_watcher_changed: std::future::Pending<Result<(), tokio::sync::watch::error::RecvError>> = n0_future::future::pending();
 
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             let direct_addr_heartbeat_timer_tick = direct_addr_heartbeat_timer.tick();
-            #[cfg(wasm_browser)]
+            #[cfg(any(wasm_browser, feature = "no_holepunch"))]
             let direct_addr_heartbeat_timer_tick = n0_future::future::pending();
 
             tokio::select! {
@@ -2525,7 +2530,10 @@ impl Actor {
 
                         trace!("tick: portmap changed");
                         self.msock.metrics.magicsock.actor_tick_portmap_changed.inc();
+                        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                         let new_external_address = *portmap_watcher.borrow();
+                        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
+                        let new_external_address: Option<std::net::Ipv4Addr> = None;
                         debug!("external address updated: {new_external_address:?}");
                         self.msock.re_stun("portmap_updated");
                     }
@@ -2594,7 +2602,7 @@ impl Actor {
         debug!("link change detected: major? {}", is_major);
 
         if is_major {
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             {
                 if let Err(err) = self.sockets.v4.rebind() {
                     warn!("failed to rebind Udp IPv4 socket: {:?}", err);
@@ -2634,7 +2642,7 @@ impl Actor {
                 debug!("shutting down");
 
                 self.msock.node_map.notify_shutdown();
-                #[cfg(not(wasm_browser))]
+                #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                 self.sockets.port_mapper.deactivate();
                 self.relay_actor_cancel_token.cancel();
 
@@ -2682,7 +2690,7 @@ impl Actor {
         self.msock.metrics.magicsock.update_direct_addrs.inc();
 
         debug!("starting direct addr update ({})", why);
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         self.sockets.port_mapper.procure_mapping();
         self.update_net_info(why).await;
     }
@@ -2695,8 +2703,10 @@ impl Actor {
     /// - The portmapper.
     /// - A net_report report.
     /// - The local interfaces IP addresses.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn update_direct_addresses(&mut self, net_report_report: Option<Arc<net_report::Report>>) {
+        use tracing::Span;
+
         let portmap_watcher = self.sockets.port_mapper.watch_external_address();
 
         // We only want to have one DirectAddr for each SocketAddr we have.  So we store
@@ -2932,14 +2942,14 @@ impl Actor {
             );
             self.no_v4_send = !r.ipv4_can_send;
 
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             let have_port_map = self
                 .sockets
                 .port_mapper
                 .watch_external_address()
                 .borrow()
                 .is_some();
-            #[cfg(wasm_browser)]
+            #[cfg(any(wasm_browser, feature = "no_holepunch"))]
             let have_port_map = false;
 
             let mut ni = NetInfo {
@@ -2975,7 +2985,7 @@ impl Actor {
             // TODO: set link type
             self.call_net_info_callback(ni).await;
         }
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         self.update_direct_addresses(report);
     }
 
