@@ -389,7 +389,7 @@ impl NodeState {
     ///
     /// When a call-me-maybe message is sent we also need to send pings to all known paths
     /// of the endpoint.  The [`NodeState::send_call_me_maybe`] function takes care of this.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     #[instrument("want_call_me_maybe", skip_all)]
     fn want_call_me_maybe(&self, now: &Instant) -> bool {
         trace!("full ping: wanted?");
@@ -421,7 +421,7 @@ impl NodeState {
         }
     }
 
-    #[cfg(wasm_browser)]
+    #[cfg(any(wasm_browser, feature = "no_holepunch"))]
     fn want_call_me_maybe(&self, _now: &Instant) -> bool {
         trace!("full ping: skipped in browser");
         false
@@ -482,7 +482,7 @@ impl NodeState {
             warn!("in `RelayOnly` mode, ignoring request to start a hole punching attempt.");
             return None;
         }
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         if !dst.is_relay() {
             return None; // Similar to `RelayOnly` mode, we don't send UDP pings for hole-punching.
         }
@@ -1058,7 +1058,7 @@ impl NodeState {
     }
 
     /// Marks this node as having received a UDP payload message.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     pub(super) fn receive_udp(&mut self, addr: IpPort, now: Instant) {
         let Some(state) = self.udp_paths.paths.get_mut(&addr) else {
             debug_assert!(false, "node map inconsistency by_ip_port <-> direct addr");

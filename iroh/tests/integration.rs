@@ -19,15 +19,15 @@ use n0_future::{
     StreamExt,
 };
 use testresult::TestResult;
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use tokio::test;
 use tracing::{info_span, Instrument};
-#[cfg(wasm_browser)]
+#[cfg(any(wasm_browser, feature = "no_holepunch"))]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
 // Enable this if you want to run these tests in the browser.
 // Unfortunately it's either-or: Enable this and you can run in the browser, disable to run in nodejs.
-// #[cfg(wasm_browser)]
+// #[cfg(any(wasm_browser, feature = "no_holepunch"))]
 // wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
 const ECHO_ALPN: &[u8] = b"echo";
@@ -116,7 +116,7 @@ async fn simple_node_id_based_connection_transfer() -> TestResult {
     Ok(())
 }
 
-#[cfg(wasm_browser)]
+#[cfg(any(wasm_browser, feature = "no_holepunch"))]
 fn setup_logging() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::level_filters::LevelFilter::DEBUG)
@@ -131,7 +131,7 @@ fn setup_logging() {
         .init();
 }
 
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 fn setup_logging() {
     tracing_subscriber::fmt().init();
 }

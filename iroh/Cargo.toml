@@ -179,7 +179,7 @@ examples = [
   "dep:parse-size",
   "iroh-base/ticket"
 ]
-no_holepunch = []
+no_holepunch = [ "iroh-relay/no_holepunch" ]
 
 [package.metadata.docs.rs]
 all-features = true

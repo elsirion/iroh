@@ -28,9 +28,9 @@ pub enum Protocol {
 
 impl Default for Protocol {
     fn default() -> Self {
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         return Self::Relay;
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         return Self::Websocket;
     }
 }

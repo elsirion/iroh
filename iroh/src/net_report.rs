@@ -20,37 +20,37 @@ use std::{
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use iroh_base::RelayUrl;
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use iroh_relay::dns::DnsResolver;
 use iroh_relay::{protos::stun, RelayMap};
 use n0_future::{
     task::{self, AbortOnDropHandle},
     time::{Duration, Instant},
 };
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use netwatch::UdpSocket;
 use tokio::sync::{self, mpsc, oneshot};
 use tracing::{debug, error, info_span, trace, warn, Instrument};
 
 mod defaults;
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 mod dns;
 mod ip_mapped_addrs;
 mod metrics;
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 mod ping;
 mod reportgen;
 
 mod options;
 
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 pub use stun_utils::bind_local_stun_socket;
 
 /// We "vendor" what we need of the library in browsers for simplicity.
 ///
 /// We could consider making `portmapper` compile to wasm in the future,
 /// but what we need is so little it's likely not worth it.
-#[cfg(wasm_browser)]
+#[cfg(any(wasm_browser, feature = "no_holepunch"))]
 pub(crate) mod portmapper {
     /// Output of a port mapping probe.
     #[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
@@ -69,7 +69,7 @@ pub(crate) use ip_mapped_addrs::{IpMappedAddr, IpMappedAddresses};
 pub use metrics::Metrics;
 pub use options::Options;
 pub use reportgen::QuicConfig;
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use reportgen::SocketState;
 
 const FULL_REPORT_INTERVAL: Duration = Duration::from_secs(5 * 60);
@@ -303,16 +303,16 @@ impl Client {
     pub async fn get_report_all(
         &mut self,
         relay_map: RelayMap,
-        #[cfg(not(wasm_browser))] stun_sock_v4: Option<Arc<UdpSocket>>,
-        #[cfg(not(wasm_browser))] stun_sock_v6: Option<Arc<UdpSocket>>,
-        #[cfg(not(wasm_browser))] quic_config: Option<QuicConfig>,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] stun_sock_v4: Option<Arc<UdpSocket>>,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] stun_sock_v6: Option<Arc<UdpSocket>>,
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))] quic_config: Option<QuicConfig>,
     ) -> Result<Arc<Report>> {
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let opts = Options::default()
             .stun_v4(stun_sock_v4)
             .stun_v6(stun_sock_v6)
             .quic_config(quic_config);
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         let opts = Options::default();
         let rx = self.get_report_channel(relay_map.clone(), opts).await?;
         match rx.await {
@@ -787,18 +787,18 @@ struct ReportRun {
 }
 
 /// Test if IPv6 works at all, or if it's been hard disabled at the OS level.
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 fn os_has_ipv6() -> bool {
     UdpSocket::bind_local_v6(0).is_ok()
 }
 
 /// Always returns false in browsers
-#[cfg(wasm_browser)]
+#[cfg(any(wasm_browser, feature = "no_holepunch"))]
 fn os_has_ipv6() -> bool {
     false
 }
 
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 pub(crate) mod stun_utils {
     use anyhow::Context as _;
     use netwatch::IpFamily;

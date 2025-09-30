@@ -347,7 +347,7 @@ impl NodeInfo {
         self.into()
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     /// Parses a [`NodeInfo`] from a TXT records lookup.
     pub fn from_txt_lookup(lookup: crate::dns::TxtLookup) -> Result<Self> {
         let attrs = TxtAttrs::from_txt_lookup(lookup)?;

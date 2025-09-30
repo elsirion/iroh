@@ -42,7 +42,7 @@ use n0_future::{
     FutureExt, StreamExt,
 };
 use netwatch::{interfaces, netmon};
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use netwatch::UdpSocket;
 #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use netwatch::ip::LocalAddresses;
@@ -58,7 +58,7 @@ use tracing::{
 };
 use url::Url;
 
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use self::udp_conn::UdpConn;
 use self::{
     metrics::Metrics as MagicsockMetrics,
@@ -69,7 +69,7 @@ use self::{
 use crate::dns::DnsResolver;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::endpoint::PathSelection;
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use crate::net_report::IpMappedAddr;
 #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use crate::net_report::QuicConfig;
@@ -86,7 +86,7 @@ use crate::{
 mod metrics;
 mod node_map;
 mod relay_actor;
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 mod udp_conn;
 
 pub use node_map::Source;
@@ -271,7 +271,7 @@ pub(crate) struct MagicSock {
 }
 
 /// Sockets and related state, grouped together so we can cfg them out for browsers.
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 #[derive(Debug)]
 pub(crate) struct SocketState {
     /// Port configured for the ipv4 socket. Can be 0
@@ -589,12 +589,12 @@ impl MagicSock {
                             }
                         }
 
-                        #[cfg(not(wasm_browser))]
+                        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                         let udp_pending = udp_error
                             .as_ref()
                             .map(|err| err.kind() == io::ErrorKind::WouldBlock)
                             .unwrap_or_default();
-                        #[cfg(wasm_browser)]
+                        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
                         let udp_pending = false;
                         let relay_pending = relay_error
                             .as_ref()
@@ -1297,12 +1297,12 @@ impl MagicSock {
             node_key: self.public_key(),
         });
         let sent = match dst {
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             SendAddr::Udp(addr) => self
                 .udp_disco_sender
                 .try_send((addr, dst_node, msg))
                 .is_ok(),
-            #[cfg(wasm_browser)]
+            #[cfg(any(wasm_browser, feature = "no_holepunch"))]
             SendAddr::Udp(_) => {
                 // Ignoring sending pings over UDP. We don't have a UDP socket.
                 return;
@@ -2366,7 +2366,7 @@ struct Actor {
 /// Actor state that relies on sockets being available.
 ///
 /// We group these together into their own struct to make it easier to cfg out at once.
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 struct ActorSocketState {
     /// The NAT-PMP/PCP/UPnP prober/client, for requesting port mappings from NAT devices.
     port_mapper: portmapper::Client,
@@ -2376,7 +2376,7 @@ struct ActorSocketState {
     v6: Option<Arc<UdpSocket>>,
 }
 
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 impl ActorSocketState {
     fn bind(
         addr_v4: Option<SocketAddrV4>,
@@ -2518,7 +2518,7 @@ impl Actor {
                     self.msock.re_stun("periodic");
                 }
                 change = portmap_watcher_changed, if !portmap_watcher_closed => {
-                    #[cfg(not(wasm_browser))]
+                    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                     {
                         if change.is_err() {
                             trace!("tick: portmap watcher closed");
@@ -2537,11 +2537,11 @@ impl Actor {
                         debug!("external address updated: {new_external_address:?}");
                         self.msock.re_stun("portmap_updated");
                     }
-                    #[cfg(wasm_browser)]
+                    #[cfg(any(wasm_browser, feature = "no_holepunch"))]
                     let _unused_in_browsers = change;
                 },
                 _ = direct_addr_heartbeat_timer_tick => {
-                    #[cfg(not(wasm_browser))]
+                    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                     {
                         trace!(
                             "tick: direct addr heartbeat {} direct addrs",
@@ -2841,7 +2841,7 @@ impl Actor {
                 self.msock.direct_addr_update_state.run(new_why);
                 return;
             }
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             {
                 self.periodic_re_stun_timer = new_re_stun_timer(true);
             }
@@ -2956,7 +2956,7 @@ impl Actor {
                 relay_latency: Default::default(),
                 mapping_varies_by_dest_ip: r.mapping_varies_by_dest_ip,
                 hair_pinning: r.hair_pinning,
-                #[cfg(not(wasm_browser))]
+                #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
                 portmap_probe: r.portmap_probe.clone(),
                 have_port_map,
                 working_ipv6: Some(r.ipv6),
@@ -3051,7 +3051,7 @@ impl Actor {
     /// re-establishing a relay connection faster.
     async fn close_stale_relay_connections(&self) {
         let ifs = interfaces::State::new().await;
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let local_ips = ifs
             .interfaces
             .values()
@@ -3059,7 +3059,7 @@ impl Actor {
             .map(|ipnet| ipnet.addr())
             .collect();
         // In browsers, we don't have this information. This will do the right thing in the ActiveRelayActor, though.
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         let local_ips = Vec::new();
         self.send_relay_actor(RelayActorMessage::MaybeCloseRelaysOnRebind(local_ips));
     }
@@ -3094,7 +3094,7 @@ fn new_re_stun_timer(initial_delay: bool) -> time::Interval {
     }
 }
 
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 fn bind_with_fallback(mut addr: SocketAddr) -> anyhow::Result<UdpSocket> {
     debug!(%addr, "binding");
 
@@ -3394,7 +3394,7 @@ struct NetInfo {
     have_port_map: bool,
 
     /// Probe indicating the presence of port mapping protocols on the LAN.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     portmap_probe: Option<portmapper::ProbeOutput>,
 
     /// This node's preferred relay server for incoming traffic.
@@ -3426,9 +3426,9 @@ impl NetInfo {
             _ => true, // ignore for comparison if only one report had this info
         };
 
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let probe_eq = self.portmap_probe == other.portmap_probe;
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         let probe_eq = true;
 
         self.mapping_varies_by_dest_ip == other.mapping_varies_by_dest_ip

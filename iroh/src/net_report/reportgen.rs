@@ -27,7 +27,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context as _, Result};
 use iroh_base::RelayUrl;
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use iroh_relay::dns::DnsResolver;
 use iroh_relay::{
     defaults::{DEFAULT_RELAY_QUIC_PORT, DEFAULT_STUN_PORT},
@@ -42,17 +42,17 @@ use n0_future::{
     time::{self, Duration, Instant},
     StreamExt as _,
 };
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use netwatch::{interfaces, UdpSocket};
 use rand::seq::IteratorRandom;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, debug_span, error, info_span, trace, warn, Instrument, Span};
 use url::Host;
 
-#[cfg(wasm_browser)]
+#[cfg(any(wasm_browser, feature = "no_holepunch"))]
 use crate::net_report::portmapper; // We stub the library
 use crate::net_report::{self, Metrics, Report};
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use crate::net_report::{
     defaults::timeouts::DNS_TIMEOUT,
     dns::DNS_STAGGERING_MS,
@@ -60,7 +60,7 @@ use crate::net_report::{
     ping::{PingError, Pinger},
 };
 
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 mod hairpin;
 mod probes;
 
@@ -85,7 +85,7 @@ pub(super) struct Client {
 /// Any state that depends on sockets being available in the current environment.
 ///
 /// Factored out so it can be disabled easily in browsers.
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 #[derive(Debug, Clone)]
 pub(crate) struct SocketState {
     /// The portmapper client, if there is one.
@@ -425,7 +425,7 @@ impl Actor {
         }
 
         // If the probe is for IPv6 and we don't yet have an IPv6 report, that would help.
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         if probe.proto() == ProbeProto::StunIpv6 && self.report.relay_v6_latency.is_empty() {
             return true;
         }
@@ -436,7 +436,7 @@ impl Actor {
         // talking to. If we don't yet have two results yet
         // (`mapping_varies_by_dest_ip` is blank), then another IPv4 probe
         // would be good.
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         if probe.proto() == ProbeProto::StunIpv4 && self.report.mapping_varies_by_dest_ip.is_none()
         {
             return true;
@@ -1246,7 +1246,7 @@ async fn run_icmp_probe(
                 anyhow!("Failed to create pinger ({err:#}), aborting probeset"),
                 probe.clone(),
             ),
-            #[cfg(not(wasm_browser))]
+            #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
             PingError::Ping(err) => ProbeError::Error(err.into(), probe.clone()),
         })?;
     debug!(dst = %relay_addr, len = DATA.len(), ?latency, "ICMP ping done");
@@ -1318,12 +1318,12 @@ async fn measure_https_latency(
     let latency = start.elapsed();
     if response.status().is_success() {
         // Only `None` if a different hyper HttpConnector in the request.
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         let remote_ip = response
             .remote_addr()
             .context("missing HttpInfo from HttpConnector")?
             .ip();
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         let remote_ip = IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
 
         // Drain the response body to be nice to the server, up to a limit.

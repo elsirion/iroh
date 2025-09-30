@@ -873,7 +873,7 @@ impl Endpoint {
     /// In browsers, because direct addresses are unavailable, this will only wait for
     /// the home relay to be available before returning.
     pub async fn node_addr(&self) -> Result<NodeAddr> {
-        #[cfg(not(wasm_browser))]
+        #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
         {
             // Outside browsers, we preserve the "old" behavior of waiting for direct
             // addresses and then adding the relay URL (should we have it)
@@ -885,7 +885,7 @@ impl Endpoint {
                 addrs.into_iter().map(|x| x.addr),
             ))
         }
-        #[cfg(wasm_browser)]
+        #[cfg(any(wasm_browser, feature = "no_holepunch"))]
         {
             // In browsers, there will never be any direct addresses, so we wait
             // for the home relay instead. This make the `NodeAddr` have *some* way

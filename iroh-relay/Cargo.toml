@@ -167,6 +167,7 @@ server = [
 ]
 metrics = ["iroh-metrics/metrics"]
 test-utils = []
+no_holepunch = []
 
 [[bin]]
 name = "iroh-relay"

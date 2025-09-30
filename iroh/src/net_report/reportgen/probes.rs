@@ -10,7 +10,7 @@ use anyhow::{ensure, Result};
 use iroh_base::RelayUrl;
 use iroh_relay::{RelayMap, RelayNode};
 use n0_future::time::Duration;
-#[cfg(not(wasm_browser))]
+#[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
 use netwatch::interfaces;
 
 use crate::net_report::Report;
@@ -48,10 +48,10 @@ const NUM_INCREMENTAL_RELAYS: usize = 3;
 #[repr(u8)]
 pub enum ProbeProto {
     /// STUN IPv4
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     StunIpv4,
     /// STUN IPv6
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     StunIpv6,
     /// HTTPS
     Https,

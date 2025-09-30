@@ -159,7 +159,7 @@ impl NodeMap {
         self.inner.lock().expect("poisoned").node_count()
     }
 
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     pub(super) fn receive_udp(
         &self,
         udp_addr: SocketAddr,
@@ -447,7 +447,7 @@ impl NodeMapInner {
     }
 
     /// Marks the node we believe to be at `ipp` as recently used.
-    #[cfg(not(wasm_browser))]
+    #[cfg(all(not(wasm_browser), not(feature = "no_holepunch")))]
     fn receive_udp(&mut self, udp_addr: SocketAddr) -> Option<(NodeId, NodeIdMappedAddr)> {
         let ip_port: IpPort = udp_addr.into();
         let Some(node_state) = self.get_mut(NodeStateKey::IpPort(ip_port)) else {
